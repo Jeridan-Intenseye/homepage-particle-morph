@@ -1,5 +1,3 @@
-
-// Lenis Smooth Scroll Setup
 let lenis = new Lenis({
     lerp: 0.1,
     wheelMultiplier: 0.7,
@@ -17,10 +15,7 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
-
-// Set the background color (e.g., to white)
-renderer.setClearColor(0x121216, 1); // 0xffffff is white, 1 is full opacity
-
+renderer.setClearColor(0x121216, 1); // Background color matches fade color
 const container = document.querySelector('#canvas-container');
 if (container) {
     container.appendChild(renderer.domElement);
@@ -37,6 +32,7 @@ const colors = new Float32Array(particleCount * 3);
 const ringProgress = new Float32Array(particleCount);
 const ringCount = 5;
 const particleColor = [1.0, 0.239, 0.0]; // #FF3D00 in RGB (0-1 range)
+const fadeColor = [0.0706, 0.0706, 0.0863]; // #121216 in RGB (0-1 range)
 for (let i = 0; i < particleCount; i++) {
     positions[i * 3] = 0;
     positions[i * 3 + 1] = 0;
@@ -85,65 +81,60 @@ for (let i = 0; i < particleCount; i++) {
     positions[i * 3 + 2] = 0;
 
     const alpha = radius > fadeRadius ? 1 - (radius - fadeRadius) / (maxRadius - fadeRadius) : 1;
-    colors[i * 3] = particleColor[0] * alpha;
-    colors[i * 3 + 1] = particleColor[1] * alpha;
-    colors[i * 3 + 2] = particleColor[2] * alpha;
+    colors[i * 3] = fadeColor[0] * (1 - alpha) + particleColor[0] * alpha;
+    colors[i * 3 + 1] = fadeColor[1] * (1 - alpha) + particleColor[1] * alpha;
+    colors[i * 3 + 2] = fadeColor[2] * (1 - alpha) + particleColor[2] * alpha;
 }
 
 }
 function toGrid(positions, colors, progressArray) {
     const gridSize = 15;
     const halfSize = gridSize / 2;
-    const lineCount = 8; // 8 lines in each direction
+    const lineCount = 8;
     const spacing = gridSize / (lineCount - 1);
 
-    // Split particles: half for vertical, half for horizontal
-    const particlesPerDirection = Math.floor(particleCount / 2);
-    const particlesPerLine = Math.floor(particlesPerDirection / lineCount);
+const particlesPerDirection = Math.floor(particleCount / 2);
+const particlesPerLine = Math.floor(particlesPerDirection / lineCount);
 
-    for (let i = 0; i < particleCount; i++) {
-        const isVertical = i < particlesPerDirection;
-        const lineIndex = isVertical
-            ? Math.floor(i / particlesPerLine)
-            : Math.floor((i - particlesPerDirection) / particlesPerLine);
-        const particleIndexInLine = isVertical
-            ? i % particlesPerLine
-            : (i - particlesPerDirection) % particlesPerLine;
+for (let i = 0; i < particleCount; i++) {
+    const isVertical = i < particlesPerDirection;
+    const lineIndex = isVertical
+        ? Math.floor(i / particlesPerLine)
+        : Math.floor((i - particlesPerDirection) / particlesPerLine);
+    const particleIndexInLine = isVertical
+        ? i % particlesPerLine
+        : (i - particlesPerDirection) % particlesPerLine;
 
-        let x, y;
-        if (isVertical) {
-            // Vertical lines (constant x, will move along y)
-            x = lineIndex * spacing - halfSize; // Fixed x position
-            y = (particleIndexInLine / (particlesPerLine - 1)) * gridSize - halfSize; // Distribute along y
-            positions[i * 3] = x;
-            positions[i * 3 + 1] = y;
-            positions[i * 3 + 2] = 0;
-        } else {
-            // Horizontal lines (constant y, will move along x)
-            y = lineIndex * spacing - halfSize; // Fixed y position
-            x = (particleIndexInLine / (particlesPerLine - 1)) * gridSize - halfSize; // Distribute along x
-            positions[i * 3] = x;
-            positions[i * 3 + 1] = y;
-            positions[i * 3 + 2] = 0;
-        }
-
-        // Apply fading effect at edges (same logic as updateGrid)
-        const distanceFromCenterX = Math.abs(x);
-        const distanceFromCenterY = Math.abs(y);
-        const maxDistance = halfSize;
-        const fadeDistance = maxDistance * 0.8;
-        const distance = Math.max(distanceFromCenterX, distanceFromCenterY);
-        const alpha = distance > fadeDistance ? 1 - (distance - fadeDistance) / (maxDistance - fadeDistance) : 1;
-
-        // Set colors with fading applied
-        colors[i * 3] = particleColor[0] * alpha;
-        colors[i * 3 + 1] = particleColor[1] * alpha;
-        colors[i * 3 + 2] = particleColor[2] * alpha;
-
-        progressArray[i] = progressArray[i] || 0;
+    let x, y;
+    if (isVertical) {
+        x = lineIndex * spacing - halfSize;
+        y = (particleIndexInLine / (particlesPerLine - 1)) * gridSize - halfSize;
+        positions[i * 3] = x;
+        positions[i * 3 + 1] = y;
+        positions[i * 3 + 2] = 0;
+    } else {
+        y = lineIndex * spacing - halfSize;
+        x = (particleIndexInLine / (particlesPerLine - 1)) * gridSize - halfSize;
+        positions[i * 3] = x;
+        positions[i * 3 + 1] = y;
+        positions[i * 3 + 2] = 0;
     }
+
+    const distanceFromCenterX = Math.abs(x);
+    const distanceFromCenterY = Math.abs(y);
+    const maxDistance = halfSize;
+    const fadeDistance = maxDistance * 0.8;
+    const distance = Math.max(distanceFromCenterX, distanceFromCenterY);
+    const alpha = distance > fadeDistance ? 1 - (distance - fadeDistance) / (maxDistance - fadeDistance) : 1;
+
+    colors[i * 3] = fadeColor[0] * (1 - alpha) + particleColor[0] * alpha;
+    colors[i * 3 + 1] = fadeColor[1] * (1 - alpha) + particleColor[1] * alpha;
+    colors[i * 3 + 2] = fadeColor[2] * (1 - alpha) + particleColor[2] * alpha;
+
+    progressArray[i] = progressArray[i] || 0;
 }
 
+}
 let globalProgress = 0;
 function updateGrid(positions, colors, progressArray) {
     const gridSize = 15;
@@ -188,9 +179,9 @@ for (let i = 0; i < particleCount; i++) {
     const distance = Math.max(distanceFromCenterX, distanceFromCenterY);
     const alpha = distance > fadeDistance ? 1 - (distance - fadeDistance) / (maxDistance - fadeDistance) : 1;
 
-    colors[i * 3] = particleColor[0] * alpha;
-    colors[i * 3 + 1] = particleColor[1] * alpha;
-    colors[i * 3 + 2] = particleColor[2] * alpha;
+    colors[i * 3] = fadeColor[0] * (1 - alpha) + particleColor[0] * alpha;
+    colors[i * 3 + 1] = fadeColor[1] * (1 - alpha) + particleColor[1] * alpha;
+    colors[i * 3 + 2] = fadeColor[2] * (1 - alpha) + particleColor[2] * alpha;
 }
 
 }
@@ -239,6 +230,16 @@ if (currentShapeIndex === 0 && !isTransitioning) {
     updateGrid(positions, colors, ringProgress);
     particles.attributes.position.needsUpdate = true;
     particles.attributes.color.needsUpdate = true;
+} else if (currentShapeIndex === 2 && !isTransitioning) {
+    for (let i = 0; i < particleCount; i++) {
+        const phi = Math.acos(-1 + (2 * i) / particleCount);
+        const theta = Math.sqrt(particleCount * Math.PI) * phi;
+        const radius = 5 + Math.sin(Date.now() * 0.001 + i * 0.01) * 0.5;
+        positions[i * 3] = radius * Math.cos(theta) * Math.sin(phi);
+        positions[i * 3 + 1] = radius * Math.sin(theta) * Math.sin(phi);
+        positions[i * 3 + 2] = radius * Math.cos(phi);
+    }
+    particles.attributes.position.needsUpdate = true;
 }
 
 if (!isTransitioning) {
@@ -315,19 +316,21 @@ morphElements.forEach((element, index) => {
         trigger: element,
         start: "top center",
         onEnter: () => {
-            animateToShape(shapes[index + 1]);
-            if (index === 0) {
-                gsap.to(canvasContainer, {
-                    x: "-25%",
-                    duration: 1,
-                    ease: "sine.inOut" 
-                });
-            } else if (index === 1) {
-                gsap.to(canvasContainer, {
-                    x: "0%",
-                    duration: 1,
-                    ease: "sine.inOut"
-                });
+            if (index + 1 < shapes.length) {
+                animateToShape(shapes[index + 1]);
+                if (index === 0) {
+                    gsap.to(canvasContainer, {
+                        x: "-25%",
+                        duration: 1,
+                        ease: "sine.inOut"
+                    });
+                } else if (index === 1) {
+                    gsap.to(canvasContainer, {
+                        x: "0%",
+                        duration: 1,
+                        ease: "sine.inOut"
+                    });
+                }
             }
         },
         onLeaveBack: () => {
@@ -336,13 +339,13 @@ morphElements.forEach((element, index) => {
                 gsap.to(canvasContainer, {
                     x: "0%",
                     duration: 1,
-                    ease: "sine.inOut" // Changed easing here (matches reverse motion)
+                    ease: "sine.inOut"
                 });
             } else if (index === 1) {
                 gsap.to(canvasContainer, {
                     x: "-25%",
                     duration: 1,
-                    ease: "sine.inOut" // Changed easing here (matches reverse motion)
+                    ease: "sine.inOut"
                 });
             }
         }

@@ -12,7 +12,7 @@ function raf(time) {
 requestAnimationFrame(raf);
 // Scene Setup
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 1000);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setClearColor(0x121216, 1); // Background color matches fade color
@@ -33,6 +33,7 @@ const ringProgress = new Float32Array(particleCount);
 const ringCount = 5;
 const particleColor = [1.0, 0.239, 0.0]; // #FF3D00 in RGB (0-1 range)
 const fadeColor = [0.0706, 0.0706, 0.0863]; // #121216 in RGB (0-1 range)
+const baseSpherePositions = new Float32Array(particleCount * 3); // Store base sphere positions
 for (let i = 0; i < particleCount; i++) {
     positions[i * 3] = 0;
     positions[i * 3 + 1] = 0;
@@ -42,6 +43,14 @@ for (let i = 0; i < particleCount; i++) {
     colors[i * 3 + 2] = particleColor[2];
     const ringIndex = i % ringCount;
     ringProgress[i] = ringIndex / ringCount;
+
+    // Precompute base sphere positions
+    const phi = Math.acos(-1 + (2 * i) / particleCount);
+    const theta = Math.sqrt(particleCount * Math.PI) * phi;
+    const radius = 5;
+    baseSpherePositions[i * 3] = radius * Math.cos(theta) * Math.sin(phi);
+    baseSpherePositions[i * 3 + 1] = radius * Math.sin(theta) * Math.sin(phi);
+    baseSpherePositions[i * 3 + 2] = radius * Math.cos(phi);
 }
 particles.setAttribute('position', new THREE.BufferAttribute(positions, 3));
 particles.setAttribute('color', new THREE.BufferAttribute(colors, 3));
@@ -53,7 +62,7 @@ const material = new THREE.PointsMaterial({
 const particleSystem = new THREE.Points(particles, material);
 scene.add(particleSystem);
 // Set initial rotation for rings
-particleSystem.rotation.x = THREE.MathUtils.degToRad(-45);
+particleSystem.rotation.x = THREE.MathUtils.degToRad(-30);
 // Mouse movement
 let mouseX = 0;
 let mouseY = 0;
@@ -65,245 +74,259 @@ window.addEventListener('mousemove', (event) => {
 function updateRings(positions, colors, progressArray) {
     const maxRadius = 10;
     const fadeRadius = maxRadius * 0.8;
-
-for (let i = 0; i < particleCount; i++) {
-    let progress = progressArray[i];
-    let radius = maxRadius * progress;
-    const angle = (i / particleCount) * Math.PI * 2;
-
-    if (radius > maxRadius) {
-        progress = 0;
-        progressArray[i] = 0;
+    for (let i = 0; i < particleCount; i++) {
+        let progress = progressArray[i];
+        let radius = maxRadius * progress;
+        const angle = (i / particleCount) * Math.PI * 2;
+        if (radius > maxRadius) {
+            progress = 0;
+            progressArray[i] = 0;
+        }
+        positions[i * 3] = Math.cos(angle) * radius;
+        positions[i * 3 + 1] = Math.sin(angle) * radius;
+        positions[i * 3 + 2] = 0;
+        const alpha = radius > fadeRadius ? 1 - (radius - fadeRadius) / (maxRadius - fadeRadius) : 1;
+        colors[i * 3] = fadeColor[0] * (1 - alpha) + particleColor[0] * alpha;
+        colors[i * 3 + 1] = fadeColor[1] * (1 - alpha) + particleColor[1] * alpha;
+        colors[i * 3 + 2] = fadeColor[2] * (1 - alpha) + particleColor[2] * alpha;
     }
-
-    positions[i * 3] = Math.cos(angle) * radius;
-    positions[i * 3 + 1] = Math.sin(angle) * radius;
-    positions[i * 3 + 2] = 0;
-
-    const alpha = radius > fadeRadius ? 1 - (radius - fadeRadius) / (maxRadius - fadeRadius) : 1;
-    colors[i * 3] = fadeColor[0] * (1 - alpha) + particleColor[0] * alpha;
-    colors[i * 3 + 1] = fadeColor[1] * (1 - alpha) + particleColor[1] * alpha;
-    colors[i * 3 + 2] = fadeColor[2] * (1 - alpha) + particleColor[2] * alpha;
 }
 
-}
-function toGrid(positions, colors, progressArray) {
-    const gridSize = 15;
-    const halfSize = gridSize / 2;
-    const lineCount = 8;
-    const spacing = gridSize / (lineCount - 1);
-
-const particlesPerDirection = Math.floor(particleCount / 2);
-const particlesPerLine = Math.floor(particlesPerDirection / lineCount);
-
-for (let i = 0; i < particleCount; i++) {
-    const isVertical = i < particlesPerDirection;
-    const lineIndex = isVertical
-        ? Math.floor(i / particlesPerLine)
-        : Math.floor((i - particlesPerDirection) / particlesPerLine);
-    const particleIndexInLine = isVertical
-        ? i % particlesPerLine
-        : (i - particlesPerDirection) % particlesPerLine;
-
-    let x, y;
-    if (isVertical) {
-        x = lineIndex * spacing - halfSize;
-        y = (particleIndexInLine / (particlesPerLine - 1)) * gridSize - halfSize;
-        positions[i * 3] = x;
-        positions[i * 3 + 1] = y;
-        positions[i * 3 + 2] = 0;
-    } else {
-        y = lineIndex * spacing - halfSize;
-        x = (particleIndexInLine / (particlesPerLine - 1)) * gridSize - halfSize;
-        positions[i * 3] = x;
-        positions[i * 3 + 1] = y;
-        positions[i * 3 + 2] = 0;
-    }
-
-    const distanceFromCenterX = Math.abs(x);
-    const distanceFromCenterY = Math.abs(y);
-    const maxDistance = halfSize;
+function toCircleWithLine(positions, colors, progressArray) {
+    const radius = 5;
+    const thickness = 1;
+    const halfThickness = thickness / 2;
+    const circleParticleCount = Math.floor(particleCount * 0.7);
+    const lineParticleCount = particleCount - circleParticleCount;
+    const maxDistance = radius + halfThickness;
     const fadeDistance = maxDistance * 0.8;
-    const distance = Math.max(distanceFromCenterX, distanceFromCenterY);
-    const alpha = distance > fadeDistance ? 1 - (distance - fadeDistance) / (maxDistance - fadeDistance) : 1;
+    const angle45 = Math.PI / 4;
 
-    colors[i * 3] = fadeColor[0] * (1 - alpha) + particleColor[0] * alpha;
-    colors[i * 3 + 1] = fadeColor[1] * (1 - alpha) + particleColor[1] * alpha;
-    colors[i * 3 + 2] = fadeColor[2] * (1 - alpha) + particleColor[2] * alpha;
+    for (let i = 0; i < particleCount; i++) {
+        let x, y, z;
+        let alpha = 1;
 
-    progressArray[i] = progressArray[i] || 0;
-}
+        if (i < circleParticleCount) {
+            const angle = (i / circleParticleCount) * Math.PI * 2;
+            const ringOffset = ((i % 10) / 10 - 0.5) * thickness;
+            const r = radius + ringOffset;
 
-}
-let globalProgress = 0;
-function updateGrid(positions, colors, progressArray) {
-    const gridSize = 15;
-    const halfSize = gridSize / 2;
-    const lineCount = 8;
-    const spacing = gridSize / (lineCount - 1);
-    const particlesPerDirection = Math.floor(particleCount / 2);
-    const particlesPerLine = Math.floor(particlesPerDirection / lineCount);
+            x = Math.cos(angle) * r;
+            y = Math.sin(angle) * r;
+            z = 0;
 
-globalProgress += 0.002;
-if (globalProgress > 1) globalProgress = 0;
+            const distanceFromCenter = Math.sqrt(x * x + y * y);
+            alpha = distanceFromCenter > fadeDistance
+                ? Math.max(0, 1 - (distanceFromCenter - fadeDistance) / (maxDistance - fadeDistance))
+                : 1;
+        } else {
+            const lineIndex = i - circleParticleCount;
+            const lineLength = radius * 2 + thickness;
+            const t = (lineIndex / (lineParticleCount - 1)) * lineLength - (lineLength / 2);
+            const offset = ((i % 10) / 10 - 0.5) * thickness;
 
-const moveOffset = (globalProgress * 2 - 1) * halfSize * 0.3;
+            x = t * Math.cos(angle45) + offset * Math.sin(angle45);
+            y = t * Math.sin(angle45) - offset * Math.cos(angle45);
+            z = 0;
 
-for (let i = 0; i < particleCount; i++) {
-    const isVertical = i < particlesPerDirection;
-    const lineIndex = isVertical
-        ? Math.floor(i / particlesPerLine)
-        : Math.floor((i - particlesPerDirection) / particlesPerLine);
-    const particleIndexInLine = isVertical
-        ? i % particlesPerLine
-        : (i - particlesPerDirection) % particlesPerLine;
+            const distanceFromCenter = Math.sqrt(x * x + y * y);
+            alpha = distanceFromCenter > fadeDistance
+                ? Math.max(0, 1 - (distanceFromCenter - fadeDistance) / (maxDistance - fadeDistance))
+                : 1;
+        }
 
-    if (isVertical) {
-        const x = lineIndex * spacing - halfSize + moveOffset;
-        const y = (particleIndexInLine / (particlesPerLine - 1)) * gridSize - halfSize;
         positions[i * 3] = x;
         positions[i * 3 + 1] = y;
-        positions[i * 3 + 2] = 0;
-    } else {
-        const y = lineIndex * spacing - halfSize + moveOffset;
-        const x = (particleIndexInLine / (particlesPerLine - 1)) * gridSize - halfSize;
-        positions[i * 3] = x;
-        positions[i * 3 + 1] = y;
-        positions[i * 3 + 2] = 0;
+        positions[i * 3 + 2] = z;
+
+        progressArray[i] = progressArray[i] || 0;
+
+        alpha = alpha * alpha;
+        colors[i * 3] = fadeColor[0] * (1 - alpha) + particleColor[0] * alpha;
+        colors[i * 3 + 1] = fadeColor[1] * (1 - alpha) + particleColor[1] * alpha;
+        colors[i * 3 + 2] = fadeColor[2] * (1 - alpha) + particleColor[2] * alpha;
     }
+}
 
-    const distanceFromCenterX = Math.abs(positions[i * 3]);
-    const distanceFromCenterY = Math.abs(positions[i * 3 + 1]);
-    const maxDistance = halfSize;
+function updateCircleWithLine(positions, colors, progressArray) {
+    const radius = 5;
+    const thickness = 1;
+    const halfThickness = thickness / 2;
+    const circleParticleCount = Math.floor(particleCount * 0.7);
+    const lineParticleCount = particleCount - circleParticleCount;
+    const maxDistance = radius + halfThickness;
     const fadeDistance = maxDistance * 0.8;
-    const distance = Math.max(distanceFromCenterX, distanceFromCenterY);
-    const alpha = distance > fadeDistance ? 1 - (distance - fadeDistance) / (maxDistance - fadeDistance) : 1;
+    const angle45 = Math.PI / 4;
 
-    colors[i * 3] = fadeColor[0] * (1 - alpha) + particleColor[0] * alpha;
-    colors[i * 3 + 1] = fadeColor[1] * (1 - alpha) + particleColor[1] * alpha;
-    colors[i * 3 + 2] = fadeColor[2] * (1 - alpha) + particleColor[2] * alpha;
+    const pulse = Math.sin(Date.now() * 0.001) * 0.2;
+
+    for (let i = 0; i < particleCount; i++) {
+        let x, y, z;
+        let alpha = 1;
+
+        if (i < circleParticleCount) {
+            const angle = (i / circleParticleCount) * Math.PI * 2;
+            const ringOffset = ((i % 10) / 10 - 0.5) * thickness;
+            const r = radius + ringOffset + pulse;
+
+            x = Math.cos(angle) * r;
+            y = Math.sin(angle) * r;
+            z = 0;
+
+            const distanceFromCenter = Math.sqrt(x * x + y * y);
+            alpha = distanceFromCenter > fadeDistance
+                ? Math.max(0, 1 - (distanceFromCenter - fadeDistance) / (maxDistance - fadeDistance))
+                : 1;
+        } else {
+            const lineIndex = i - circleParticleCount;
+            const lineLength = radius * 2 + thickness;
+            const t = (lineIndex / (lineParticleCount - 1)) * lineLength - (lineLength / 2);
+            const offset = ((i % 10) / 10 - 0.5) * thickness;
+
+            x = t * Math.cos(angle45) + offset * Math.sin(angle45);
+            y = t * Math.sin(angle45) - offset * Math.cos(angle45);
+            z = 0;
+
+            const distanceFromCenter = Math.sqrt(x * x + y * y);
+            alpha = distanceFromCenter > fadeDistance
+                ? Math.max(0, 1 - (distanceFromCenter - fadeDistance) / (maxDistance - fadeDistance))
+                : 1;
+        }
+
+        positions[i * 3] = x;
+        positions[i * 3 + 1] = y;
+        positions[i * 3 + 2] = z;
+
+        alpha = alpha * alpha;
+        colors[i * 3] = fadeColor[0] * (1 - alpha) + particleColor[0] * alpha;
+        colors[i * 3 + 1] = fadeColor[1] * (1 - alpha) + particleColor[1] * alpha;
+        colors[i * 3 + 2] = fadeColor[2] * (1 - alpha) + particleColor[2] * alpha;
+    }
 }
 
-}
 function toSphere(positions, colors) {
     for (let i = 0; i < particleCount; i++) {
-        const phi = Math.acos(-1 + (2 * i) / particleCount);
-        const theta = Math.sqrt(particleCount * Math.PI) * phi;
-        const radius = 5;
-        positions[i * 3] = radius * Math.cos(theta) * Math.sin(phi);
-        positions[i * 3 + 1] = radius * Math.sin(theta) * Math.sin(phi);
-        positions[i * 3 + 2] = radius * Math.cos(phi);
+        positions[i * 3] = baseSpherePositions[i * 3];
+        positions[i * 3 + 1] = baseSpherePositions[i * 3 + 1];
+        positions[i * 3 + 2] = baseSpherePositions[i * 3 + 2];
         colors[i * 3] = particleColor[0];
         colors[i * 3 + 1] = particleColor[1];
         colors[i * 3 + 2] = particleColor[2];
     }
 }
-// Precompute Shape Positions
+
+let sphereTransitionTime = null; // Store the time when sphere transition completes
+function updateSphere(positions) {
+    const now = Date.now();
+    let pulseAmplitude = 0.1; // Default pulse amplitude
+    if (sphereTransitionTime !== null) {
+        const timeSinceTransition = (now - sphereTransitionTime) / 1000; // Time in seconds
+        // Gradually increase pulse amplitude over 1 second
+        pulseAmplitude = Math.min(timeSinceTransition, 1) * 0.1;
+    }
+    for (let i = 0; i < particleCount; i++) {
+        const baseX = baseSpherePositions[i * 3];
+        const baseY = baseSpherePositions[i * 3 + 1];
+        const baseZ = baseSpherePositions[i * 3 + 2];
+        const radiusFactor = 1 + Math.sin(now * 0.001 + i * 0.01) * pulseAmplitude;
+        positions[i * 3] = baseX * radiusFactor;
+        positions[i * 3 + 1] = baseY * radiusFactor;
+        positions[i * 3 + 2] = baseZ * radiusFactor;
+    }
+}
+
+// Precompute Shape Positions (only rings)
 const ringPositions = new Float32Array(particleCount * 3);
 const ringColors = new Float32Array(particleCount * 3);
-const gridPositions = new Float32Array(particleCount * 3);
-const gridColors = new Float32Array(particleCount * 3);
-const spherePositions = new Float32Array(particleCount * 3);
-const sphereColors = new Float32Array(particleCount * 3);
 updateRings(ringPositions, ringColors, ringProgress);
-toGrid(gridPositions, gridColors, ringProgress);
-toSphere(spherePositions, sphereColors);
 const shapes = [
     { positions: ringPositions, colors: ringColors },
-    { positions: gridPositions, colors: gridColors },
-    { positions: spherePositions, colors: sphereColors }
+    null, // Circle with line computed dynamically
+    null  // Sphere computed dynamically
 ];
 // Animation Loop
 let currentShapeIndex = 0;
 let isTransitioning = false;
 function animate() {
     requestAnimationFrame(animate);
-
-if (currentShapeIndex === 0 && !isTransitioning) {
-    for (let i = 0; i < particleCount; i++) {
-        ringProgress[i] += 0.002;
+    if (currentShapeIndex === 0 && !isTransitioning) {
+        for (let i = 0; i < particleCount; i++) {
+            ringProgress[i] += 0.002;
+        }
+        updateRings(positions, colors, ringProgress);
+        particles.attributes.position.needsUpdate = true;
+        particles.attributes.color.needsUpdate = true;
+    } else if (currentShapeIndex === 1 && !isTransitioning) {
+        updateCircleWithLine(positions, colors, ringProgress);
+        particles.attributes.position.needsUpdate = true;
+        particles.attributes.color.needsUpdate = true;
+    } else if (currentShapeIndex === 2 && !isTransitioning) {
+        updateSphere(positions);
+        particles.attributes.position.needsUpdate = true;
     }
-    updateRings(positions, colors, ringProgress);
-    particles.attributes.position.needsUpdate = true;
-    particles.attributes.color.needsUpdate = true;
-} else if (currentShapeIndex === 1 && !isTransitioning) {
-    updateGrid(positions, colors, ringProgress);
-    particles.attributes.position.needsUpdate = true;
-    particles.attributes.color.needsUpdate = true;
-} else if (currentShapeIndex === 2 && !isTransitioning) {
-    for (let i = 0; i < particleCount; i++) {
-        const phi = Math.acos(-1 + (2 * i) / particleCount);
-        const theta = Math.sqrt(particleCount * Math.PI) * phi;
-        const radius = 5 + Math.sin(Date.now() * 0.001 + i * 0.01) * 0.5;
-        positions[i * 3] = radius * Math.cos(theta) * Math.sin(phi);
-        positions[i * 3 + 1] = radius * Math.sin(theta) * Math.sin(phi);
-        positions[i * 3 + 2] = radius * Math.cos(phi);
+    if (!isTransitioning) {
+        const targetRotationY = mouseX * 0.2;
+        const targetRotationX = -mouseY * 0.2 + (currentShapeIndex === 0 ? THREE.MathUtils.degToRad(-45) : 0);
+        particleSystem.rotation.y += (targetRotationY - particleSystem.rotation.y) * 0.05;
+        particleSystem.rotation.x += (targetRotationX - particleSystem.rotation.x) * 0.05;
     }
-    particles.attributes.position.needsUpdate = true;
-}
-
-if (!isTransitioning) {
-    const targetRotationY = mouseX * 0.2;
-    const targetRotationX = mouseY * 0.2 + (currentShapeIndex === 0 ? THREE.MathUtils.degToRad(-45) : 0);
-    particleSystem.rotation.y += (targetRotationY - particleSystem.rotation.y) * 0.05;
-    particleSystem.rotation.x += (targetRotationX - particleSystem.rotation.x) * 0.05;
-}
-
-renderer.render(scene, camera);
-
+    renderer.render(scene, camera);
 }
 animate();
 // GSAP ScrollTrigger Setup
 gsap.registerPlugin(ScrollTrigger);
-// Select the canvas container
 const canvasContainer = document.querySelector('#canvas-container');
-// Function to animate to a target shape
-function animateToShape(targetShape) {
-    const targetIndex = shapes.indexOf(targetShape);
+function animateToShape(targetIndex) {
+    isTransitioning = true;
+    let targetPositions = new Float32Array(particleCount * 3);
+    let targetColors = new Float32Array(particleCount * 3);
 
-isTransitioning = true;
-
-if (targetIndex === 0) {
-    for (let i = 0; i < particleCount; i++) {
-        const ringIndex = i % ringCount;
-        ringProgress[i] = ringIndex / ringCount;
+    if (targetIndex === 0) {
+        for (let i = 0; i < particleCount; i++) {
+            const ringIndex = i % ringCount;
+            ringProgress[i] = ringIndex / ringCount;
+        }
+        updateRings(targetPositions, targetColors, ringProgress);
+    } else if (targetIndex === 1) {
+        for (let i = 0; i < particleCount; i++) {
+            ringProgress[i] = 0;
+        }
+        toCircleWithLine(targetPositions, targetColors, ringProgress);
+    } else if (targetIndex === 2) {
+        toSphere(targetPositions, targetColors);
     }
-} else if (targetIndex === 1) {
-    for (let i = 0; i < particleCount; i++) {
-        ringProgress[i] = 0;
-    }
-    globalProgress = 0;
-}
 
-gsap.to(positions, {
-    duration: 1,
-    endArray: targetShape.positions,
-    onUpdate: () => {
-        particles.attributes.position.needsUpdate = true;
-    },
-    ease: "power2.inOut"
-});
-
-gsap.to(colors, {
-    duration: 1,
-    endArray: targetShape.colors,
-    onUpdate: () => {
-        particles.attributes.color.needsUpdate = true;
-    },
-    ease: "power2.inOut"
-});
-
-gsap.to(particleSystem.rotation, {
-    duration: 1,
-    x: targetIndex === 0 ? THREE.MathUtils.degToRad(-45) : 0,
-    y: 0,
-    ease: "power2.inOut",
-    onComplete: () => {
-        currentShapeIndex = targetIndex;
-        isTransitioning = false;
-    }
-});
-
+    gsap.to(positions, {
+        duration: 1,
+        endArray: targetPositions,
+        onUpdate: () => {
+            particles.attributes.position.needsUpdate = true;
+        },
+        ease: "power2.inOut"
+    });
+    gsap.to(colors, {
+        duration: 1,
+        endArray: targetColors,
+        onUpdate: () => {
+            particles.attributes.color.needsUpdate = true;
+        },
+        ease: "power2.inOut"
+    });
+    gsap.to(particleSystem.rotation, {
+        duration: 1,
+        x: targetIndex === 0 ? THREE.MathUtils.degToRad(-45) : 0,
+        y: 0,
+        ease: "power2.inOut",
+        onComplete: () => {
+            currentShapeIndex = targetIndex;
+            isTransitioning = false;
+            if (targetIndex === 2) {
+                sphereTransitionTime = Date.now(); // Record transition end time
+            } else {
+                sphereTransitionTime = null; // Reset when not in sphere mode
+            }
+        }
+    });
 }
 // Initial shape setup
 updateRings(positions, colors, ringProgress);
@@ -316,8 +339,8 @@ morphElements.forEach((element, index) => {
         trigger: element,
         start: "top center",
         onEnter: () => {
-            if (index + 1 < shapes.length) {
-                animateToShape(shapes[index + 1]);
+            if (index + 1 < 3) {
+                animateToShape(index + 1);
                 if (index === 0) {
                     gsap.to(canvasContainer, {
                         x: "-25%",
@@ -334,7 +357,7 @@ morphElements.forEach((element, index) => {
             }
         },
         onLeaveBack: () => {
-            animateToShape(shapes[index]);
+            animateToShape(index);
             if (index === 0) {
                 gsap.to(canvasContainer, {
                     x: "0%",
@@ -356,3 +379,4 @@ window.addEventListener('resize', () => {
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
 });
+
